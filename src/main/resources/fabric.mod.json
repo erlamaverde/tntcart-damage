@@ -1,0 +1,30 @@
+{
+	"schemaVersion": 1,
+	"id": "tntcartdamage",
+	"version": "${version}",
+	"name": "TNT Cart Damage",
+	"description": "Shows the damage a player takes from a TNT minecart above their head.",
+	"authors": [
+		"ErLama"
+	],
+	"license": "MIT",
+	"icon": "assets/tntcartdamage/icon.png",
+	"environment": "client",
+	"entrypoints": {
+		"client": [
+			"com.tntcartdamage.client.TntCartDamageClient"
+		]
+	},
+	"mixins": [
+		{
+			"config": "tntcartdamage.client.mixins.json",
+			"environment": "client"
+		}
+	],
+	"depends": {
+		"fabricloader": ">=0.19.5",
+		"minecraft": "~26.2",
+		"java": ">=25",
+		"fabric-api": "*"
+	}
+}

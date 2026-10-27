@@ -1,0 +1,16 @@
+{
+	"required": true,
+	"package": "com.tntcartdamage.client.mixin",
+	"compatibilityLevel": "JAVA_25",
+	"client": [
+		"ClientPacketListenerMixin",
+		"LivingEntityAccessor",
+		"LivingEntityMixin"
+	],
+	"injectors": {
+		"defaultRequire": 1
+	},
+	"overwrites": {
+		"requireAnnotations": true
+	}
+}

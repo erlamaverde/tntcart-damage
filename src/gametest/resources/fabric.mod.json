@@ -1,0 +1,15 @@
+{
+	"schemaVersion": 1,
+	"id": "tntcartdamage-gametest",
+	"version": "1.0.0",
+	"name": "TNT Cart Damage (test)",
+	"environment": "*",
+	"entrypoints": {
+		"fabric-client-gametest": [
+			"com.tntcartdamage.gametest.TntCartDamageClientGameTest"
+		]
+	},
+	"depends": {
+		"tntcartdamage": "*"
+	}
+}
