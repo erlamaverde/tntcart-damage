@@ -7,6 +7,10 @@
 	"authors": [
 		"ErLama"
 	],
+	"contact": {
+		"sources": "https://github.com/erlamaverde/tntcart-damage",
+		"issues": "https://github.com/erlamaverde/tntcart-damage/issues"
+	},
 	"license": "MIT",
 	"icon": "assets/tntcartdamage/icon.png",
 	"environment": "client",
