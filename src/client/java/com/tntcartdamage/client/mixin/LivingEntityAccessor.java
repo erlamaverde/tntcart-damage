@@ -9,9 +9,9 @@ import org.spongepowered.asm.mixin.gen.Accessor;
 import java.util.List;
 
 /**
- * Il server non manda al client gli effetti (pozioni) degli altri player, ma manda la lista
- * delle particelle degli effetti visibili (i "pallini" colorati). Il campo che la contiene è
- * privato: questo accessor ci permette di leggerlo.
+ * The server does not send other players' effects (potions) to the client, but it does send the
+ * list of particles of their visible effects (the colored swirls). The field holding it is
+ * private: this accessor lets us read it.
  */
 @Mixin(LivingEntity.class)
 public interface LivingEntityAccessor {

@@ -14,16 +14,15 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * Ascolta i pacchetti "esplosione" ed "evento entità". Questi metodi vengono chiamati
- * prima sul thread di rete e poi di nuovo sul thread principale del gioco: lavoriamo solo
- * sul thread del gioco.
+ * Listens to the "explosion" and "entity event" packets. These methods are called first on
+ * the network thread and then again on the main game thread: we only do work on the game thread.
  */
 @Mixin(ClientPacketListener.class)
 public abstract class ClientPacketListenerMixin {
-	// HEAD (e non TAIL): vanilla, dentro questo metodo, dà subito al nostro player la spinta
-	// dell'esplosione. Noi vogliamo calcolare tutto con lo stato di PRIMA dell'esplosione.
-	// La prima chiamata arriva dal thread di rete (vanilla la rimanda al thread del gioco):
-	// quella la saltiamo, e lavoriamo solo nella seconda, sul thread del gioco.
+	// HEAD (not TAIL): inside this method vanilla immediately applies the explosion knockback
+	// to our player, and we want to compute everything with the state from BEFORE the explosion.
+	// The first call comes from the network thread (vanilla re-schedules it on the game thread):
+	// we skip that one and only do work in the second call, on the game thread.
 	@Inject(method = "handleExplosion", at = @At("HEAD"))
 	private void tntcartdamage$onExplosion(ClientboundExplodePacket packet, CallbackInfo ci) {
 		Minecraft client = Minecraft.getInstance();
@@ -32,11 +31,11 @@ public abstract class ClientPacketListenerMixin {
 		}
 	}
 
-	// RETURN (e non TAIL) perché il metodo ha più punti di uscita.
+	// RETURN (not TAIL) because the method has more than one exit point.
 	@Inject(method = "handleEntityEvent", at = @At("RETURN"))
 	private void tntcartdamage$onEntityEvent(ClientboundEntityEventPacket packet, CallbackInfo ci) {
 		Minecraft client = Minecraft.getInstance();
-		// L'evento 35 è quello del totem che salva dalla morte (animazione + particelle).
+		// Event 35 is the totem of undying saving someone from death (animation + particles).
 		if (client.level == null || packet.getEventId() != EntityEvent.PROTECTED_FROM_DEATH) {
 			return;
 		}

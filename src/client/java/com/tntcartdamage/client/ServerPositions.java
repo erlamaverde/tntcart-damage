@@ -13,36 +13,36 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Dove si trova un player "secondo il server".
+ * Where a player is "according to the server".
  *
- * Due problemi:
- *  1. Il client disegna gli altri player un po' in ritardo: quando arriva una posizione nuova,
- *     il player ci scivola sopra in qualche frame (interpolazione).
- *  2. Il server manda la posizione di un player che si muove solo ogni 2 tick, e quella che ha
- *     usato per l'esplosione arriva DOPO il pacchetto dell'esplosione (insieme alla vita).
- * Quindi prendiamo l'ultima posizione mandata dal server e, se il player si sta muovendo,
- * la spostiamo avanti di 1 tick con la sua velocità.
+ * Two problems:
+ *  1. The client draws other players slightly behind: when a new position arrives, the player
+ *     slides onto it over a few frames (interpolation).
+ *  2. The server only sends a moving player's position every 2 ticks, and the one it used for
+ *     the explosion arrives AFTER the explosion packet (together with the health).
+ * So we take the last position sent by the server and, if the player is moving, we push it
+ * 1 tick ahead using their velocity.
  */
 public final class ServerPositions {
-	/** Un player che si muove riceve una posizione nuova ogni 2 tick: se non ne arriva una
-	 *  da più di questi tick, è fermo. */
+	/** A moving player gets a new position every 2 ticks: if none has arrived for more than
+	 *  this many ticks, they're standing still. */
 	private static final int MOVING_TIMEOUT_TICKS = 3;
-	/** Se tra due posizioni passano più di questi tick, non le usiamo per la velocità. */
+	/** If more than this many ticks pass between two positions, we don't use them for velocity. */
 	private static final int MAX_SAMPLE_GAP_TICKS = 4;
-	/** Oltre questa velocità (blocchi/tick) è un teletrasporto, non movimento. */
+	/** Above this speed (blocks/tick) it's a teleport, not movement. */
 	private static final double MAX_SPEED = 4.0;
 
-	/** Una posizione mandata dal server e il tick del client in cui l'abbiamo vista. */
+	/** A position sent by the server and the client tick in which we saw it. */
 	private record Sample(Vec3 pos, int tick) {
 	}
 
-	/** id del player -> [0] = ultima posizione, [1] = quella prima. */
+	/** player id -> [0] = latest position, [1] = the one before it. */
 	private static final Map<Integer, Sample[]> history = new HashMap<>();
 
 	private ServerPositions() {
 	}
 
-	/** L'ultima posizione mandata dal server (per il nostro player, quella attuale). */
+	/** The last position sent by the server (for our own player, the current one). */
 	public static Vec3 latest(Player player) {
 		if (player instanceof LocalPlayer) {
 			return player.position();
@@ -54,7 +54,7 @@ public final class ServerPositions {
 		return player.position();
 	}
 
-	/** Da chiamare ogni tick: si segna quando arrivano posizioni nuove. */
+	/** Call every tick: records when new positions arrive. */
 	public static void tick(ClientLevel level, int clientTick) {
 		Set<Integer> present = new HashSet<>();
 		for (AbstractClientPlayer player : level.players()) {
@@ -73,7 +73,7 @@ public final class ServerPositions {
 		history.clear();
 	}
 
-	/** Stima della posizione del player sul server in questo momento. */
+	/** Estimate of the player's position on the server right now. */
 	public static Vec3 estimate(Player player, int clientTick) {
 		Vec3 latest = latest(player);
 		if (player instanceof LocalPlayer) {
@@ -85,7 +85,7 @@ public final class ServerPositions {
 		}
 		Sample newest = samples[0];
 		Sample older = samples[1];
-		// È arrivata una posizione nuova in questo stesso frame, prima dell'esplosione?
+		// Did a new position arrive in this same frame, before the explosion?
 		if (newest.pos().distanceToSqr(latest) > 1.0e-6) {
 			older = newest;
 			newest = new Sample(latest, clientTick);
@@ -95,7 +95,7 @@ public final class ServerPositions {
 		}
 		int sinceNewest = clientTick - newest.tick();
 		int between = newest.tick() - older.tick();
-		// Fermo (niente posizioni nuove da un po') o dati troppo vecchi: niente movimento.
+		// Standing still (no new positions for a while) or data too old: no movement.
 		if (sinceNewest > MOVING_TIMEOUT_TICKS || between < 1 || between > MAX_SAMPLE_GAP_TICKS) {
 			return latest;
 		}

@@ -12,16 +12,16 @@ import java.util.Locale;
 import java.util.Set;
 
 /**
- * Alcuni server (es. PvPHQ) mandano una vita FINTA degli altri player, per non far
- * funzionare le mod che mostrano la vita degli avversari. Su questi server la vita degli
- * altri non vale niente: sono veri solo i cuori gialli.
- * Ce li ricordiamo in un file, così dalla prossima volta lo sappiamo subito.
+ * Some servers (e.g. PvPHQ) send FAKE health values for other players, so that mods showing
+ * opponents' health don't work. On these servers other players' health is meaningless: only
+ * the absorption hearts are real.
+ * We remember them in a file, so next time we know right away.
  */
 public final class FakeHealthServers {
 	private static final Path FILE =
 			FabricLoader.getInstance().getConfigDir().resolve("tntcartdamage-fake-health-servers.txt");
 
-	/** Server già conosciuti (caricati dal file la prima volta che servono). */
+	/** Servers we already know about (loaded from the file the first time they're needed). */
 	private static Set<String> known;
 
 	private FakeHealthServers() {
@@ -38,14 +38,14 @@ public final class FakeHealthServers {
 			try {
 				Files.write(FILE, known);
 			} catch (IOException ignored) {
-				// Non riuscire a salvare non è grave: lo riscopriamo la prossima volta.
+				// Failing to save is not a big deal: we'll find out again next time.
 			}
 		}
 	}
 
 	/**
-	 * Il server a cui siamo connessi, ridotto al dominio principale, così i vari
-	 * sotto-server di una rete contano come uno solo:
+	 * The server we're connected to, reduced to its main domain so that all the sub-servers
+	 * of a network count as one:
 	 * "play.lim-de.pvphq.com:25565" -> "pvphq.com". null in singleplayer.
 	 */
 	public static String currentServerKey() {
@@ -79,7 +79,7 @@ public final class FakeHealthServers {
 				}
 			}
 		} catch (IOException ignored) {
-			// File illeggibile: partiamo senza server conosciuti.
+			// Unreadable file: start with no known servers.
 		}
 	}
 }

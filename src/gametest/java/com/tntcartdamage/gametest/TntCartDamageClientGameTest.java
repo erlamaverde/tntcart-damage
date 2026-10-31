@@ -10,8 +10,8 @@ import net.minecraft.client.CameraType;
 import net.minecraft.world.entity.player.ChatVisiblity;
 
 /**
- * Apre un mondo, fa esplodere un TNT cart vicino al player e fa degli screenshot
- * (in build/run/clientGameTest/screenshots). I messaggi [TCD] finiscono anche nel log.
+ * Opens a world, blows up a TNT cart near the player and takes screenshots
+ * (in build/run/clientGameTest/screenshots). The [TCD] messages also end up in the log.
  */
 public class TntCartDamageClientGameTest implements FabricClientGameTest {
 	@Override
@@ -35,7 +35,7 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			context.waitTicks(15);
 			context.takeScreenshot("tntcart-3-gone");
 
-			// Caso totem: poca vita + totem in mano, l'esplosione lo fa scoppiare -> "pop!".
+			// Totem case: low health + totem in hand, the explosion pops it -> "pop!".
 			singleplayer.getServer().runCommand("effect clear @a");
 			singleplayer.getServer().runCommand("item replace entity @p weapon.offhand with totem_of_undying");
 			singleplayer.getServer().runCommand("damage @p 15");
@@ -44,7 +44,7 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			context.waitTicks(26);
 			context.takeScreenshot("tntcart-4-totem-pop");
 
-			// Caso altro danno (cactus) subito dopo il cart -> NON deve diventare un secondo numero.
+			// Other damage (cactus) right after the cart -> must NOT become a second number.
 			singleplayer.getServer().runCommand("effect give @a instant_health 1 5");
 			context.waitTicks(10);
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^ ^ ^-6 {fuse:20}");
@@ -52,8 +52,8 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			singleplayer.getServer().runCommand("damage @p 14 minecraft:cactus");
 			context.waitTicks(10);
 
-			// Caso vita mandata in due pezzi: dopo il cart la vita scende ancora SENZA un nuovo
-			// evento di danno (simulato abbassando la vita massima) -> va sommato allo stesso numero.
+			// Health sent in two pieces: after the cart, health drops again WITHOUT a new damage
+			// event (simulated by lowering max health) -> it must be added to the same number.
 			singleplayer.getServer().runCommand("effect give @a instant_health 1 5");
 			context.waitTicks(10);
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^ ^ ^-6 {fuse:20}");
@@ -64,20 +64,20 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			singleplayer.getServer().runCommand("attribute @p minecraft:max_health base set 20");
 			context.waitTicks(30);
 
-			// Caso due cart a 1 secondo di distanza: il secondo testo va SOPRA il primo.
+			// Two carts 1 second apart: the second label goes ABOVE the first.
 			singleplayer.getServer().runCommand("effect give @a instant_health 1 5");
 			singleplayer.getServer().runCommand("effect give @a absorption 60 1 true");
-			// Chat nascosta, altrimenti i messaggi di debug coprono il testo nello screenshot.
+			// Chat hidden, otherwise the debug messages cover the label in the screenshot.
 			context.runOnClient(client -> client.options.chatVisibility().set(ChatVisiblity.HIDDEN));
 			singleplayer.getServer().runCommand("execute as @p at @s run tp @s ~40 ~ ~");
 			context.waitTicks(20);
-			// Uno a sinistra e uno a destra, lontani tra loro: così il primo non fa esplodere il secondo.
+			// One on the left and one on the right, far apart: so the first doesn't set off the second.
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^6 ^ ^ {fuse:20}");
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^-6 ^ ^ {fuse:40}");
 			context.waitTicks(46);
 			context.takeScreenshot("tntcart-4d-stacked");
-			// Il primo testo sparisce ~60 tick dopo i summon: quello sopra deve scivolare giù
-			// in modo fluido (non saltare) e continuare a salire/sfumare da dove era.
+			// The first label disappears ~60 ticks after the summons: the one above must slide down
+			// smoothly (not jump) and keep rising/fading from where it was.
 			context.waitTicks(15);
 			context.takeScreenshot("tntcart-4d2-sliding");
 			context.waitTicks(5);
@@ -85,8 +85,8 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			context.runOnClient(client -> client.options.chatVisibility().set(ChatVisiblity.FULL));
 			context.waitTicks(10);
 
-			// Caso previsione con armatura e incantesimi, difficoltà difficile: nel log
-			// "[TCD] ... previsto -X, reale -Y" i due numeri devono essere uguali.
+			// Prediction with armor and enchantments on hard difficulty: in the log
+			// "[TCD] ... predicted -X, real -Y" the two numbers must match.
 			singleplayer.getServer().runCommand("difficulty hard");
 			singleplayer.getServer().runCommand("item replace entity @p armor.chest with diamond_chestplate[enchantments={blast_protection:4}]");
 			singleplayer.getServer().runCommand("item replace entity @p armor.legs with iron_leggings[enchantments={protection:4}]");
@@ -97,12 +97,12 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			singleplayer.getServer().runCommand("item replace entity @p armor.legs with air");
 			singleplayer.getServer().runCommand("difficulty normal");
 
-			// Caso totem senza cart: "pop!" deve comparire lo stesso.
+			// Totem without a cart: "pop!" must show up anyway.
 			singleplayer.getServer().runCommand("item replace entity @p weapon.offhand with totem_of_undying");
 			singleplayer.getServer().runCommand("damage @p 100");
 			context.waitTicks(10);
 
-			// Aspetto della previsione: sotto un numero vero, sopra uno previsto (sbiadito).
+			// How the prediction looks: a real number below, a predicted (faded) one above.
 			context.waitTicks(40);
 			context.runOnClient(client -> {
 				client.options.chatVisibility().set(ChatVisiblity.HIDDEN);
@@ -114,17 +114,17 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			context.takeScreenshot("tntcart-4e-real-vs-predicted");
 			context.runOnClient(client -> client.options.chatVisibility().set(ChatVisiblity.FULL));
 
-			// ===== Previsione: casi nuovi. Nel log: "[TCD] ... previsto -X, reale -Y" =====
+			// ===== Prediction: new cases. In the log: "[TCD] ... predicted -X, real -Y" =====
 
-			// Copertura parziale: un muretto basso di pietra tra il cart e il player.
-			// I blocchi che l'esplosione rompe non devono contare (il server calcola il danno prima).
+			// Partial cover: a low stone wall between the cart and the player.
+			// Blocks broken by the explosion must not count (the server computes the damage first).
 			freshSpot(singleplayer, context);
 			singleplayer.getServer().runCommand("execute as @p at @s run fill ^-1 ^ ^-2 ^1 ^ ^-2 stone");
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^ ^ ^-4 {fuse:20}");
 			context.waitTicks(45);
 
-			// Incantesimi "nascosti" come fa Paper (un solo incantesimo di livello I): la prima
-			// previsione sbaglia apposta (assume Protezione IV), poi impara e la seconda è giusta.
+			// "Hidden" enchantments like Paper does (a single level I enchantment): the first
+			// prediction is wrong on purpose (assumes Protection IV), then it learns and the second is right.
 			context.runOnClient(client -> DamagePredictor.testTreatSelfAsOpponent = true);
 			singleplayer.getServer().runCommand("item replace entity @p armor.head with iron_helmet[enchantments={unbreaking:1}]");
 			singleplayer.getServer().runCommand("item replace entity @p armor.chest with iron_chestplate[enchantments={unbreaking:1}]");
@@ -139,12 +139,12 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 				singleplayer.getServer().runCommand("item replace entity @p armor." + slot + " with air");
 			}
 
-			// Resistenza II vista solo come particelle: la mod assume livello I, poi impara.
+			// Resistance II only seen as particles: the mod assumes level I, then learns.
 			for (int hit = 0; hit < 2; hit++) {
 				freshSpot(singleplayer, context);
 				singleplayer.getServer().runCommand("effect give @p resistance 60 1");
 				context.waitTicks(5);
-				context.runOnClient(client -> System.out.println("[TEST] particelle Resistenza viste: "
+				context.runOnClient(client -> System.out.println("[TEST] Resistance particles seen: "
 						+ DamagePredictor.hasResistanceParticles(client.player)));
 				singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^ ^ ^-5 {fuse:20}");
 				context.waitTicks(45);
@@ -152,9 +152,9 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			context.runOnClient(client -> DamagePredictor.testTreatSelfAsOpponent = false);
 			singleplayer.getServer().runCommand("effect clear @a");
 
-			// ===== Server con la vita FINTA (simulato) =====
-			// Il nostro player fa finta di essere un avversario. La sua vita scende 3 volte senza
-			// colpi (abbassando la vita massima): la mod deve capire che la vita non è affidabile.
+			// ===== Server with FAKE health (simulated) =====
+			// Our player pretends to be an opponent. Its health drops 3 times without hits
+			// (by lowering max health): the mod must realize the health can't be trusted.
 			context.runOnClient(client -> DamagePredictor.testTreatSelfAsOpponent = true);
 			freshSpot(singleplayer, context);
 			context.waitTicks(20);
@@ -163,13 +163,13 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 				context.waitTicks(5);
 			}
 			singleplayer.getServer().runCommand("attribute @p minecraft:max_health base set 20");
-			// Colpo assorbito tutto dai cuori gialli (che sono veri): il danno vero si sa lo stesso.
+			// Hit fully absorbed by absorption hearts (which are real): the real damage is still known.
 			freshSpot(singleplayer, context);
 			singleplayer.getServer().runCommand("effect give @p absorption 60 3");
 			context.waitTicks(5);
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^ ^ ^-6 {fuse:20}");
 			context.waitTicks(45);
-			// Colpo senza cuori gialli: il danno vero non si può sapere, resta la previsione sbiadita.
+			// Hit without absorption hearts: the real damage can't be known, the faded prediction stays.
 			freshSpot(singleplayer, context);
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^ ^ ^-6 {fuse:20}");
 			context.waitTicks(24);
@@ -178,7 +178,7 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 			context.runOnClient(client -> DamagePredictor.testTreatSelfAsOpponent = false);
 			singleplayer.getServer().runCommand("effect clear @a");
 
-			// Caso prima persona: su di te il testo NON deve comparire.
+			// First-person case: the label must NOT appear on yourself.
 			context.runOnClient(client -> client.options.setCameraType(CameraType.FIRST_PERSON));
 			singleplayer.getServer().runCommand("effect give @a instant_health 1 5");
 			singleplayer.getServer().runCommand("execute as @p at @s run summon tnt_minecart ^ ^ ^6 {fuse:20}");
@@ -187,12 +187,12 @@ public class TntCartDamageClientGameTest implements FabricClientGameTest {
 		}
 	}
 
-	/** Porta il player in un posto pulito (niente crateri), senza effetti, con la vita piena e fermo a terra. */
+	/** Moves the player to a clean spot (no craters), with no effects, full health and standing on the ground. */
 	private static void freshSpot(TestSingleplayerContext singleplayer, ClientGameTestContext context) {
 		singleplayer.getServer().runCommand("execute as @p at @s run spreadplayers ~40 ~ 0 1 false @s");
 		singleplayer.getServer().runCommand("effect clear @a");
-		// Cura a passi di +8 (come una vera pozione di cura II): una cura più grande in un colpo
-		// solo sembrerebbe una "vita finta" alla mod, quando il player fa finta di essere un avversario.
+		// Heals in steps of +8 (like a real Instant Health II potion): a bigger heal in one go
+		// would look like "fake health" to the mod while the player pretends to be an opponent.
 		for (int i = 0; i < 3; i++) {
 			singleplayer.getServer().runCommand("effect give @a instant_health 1 1");
 			context.waitTicks(3);

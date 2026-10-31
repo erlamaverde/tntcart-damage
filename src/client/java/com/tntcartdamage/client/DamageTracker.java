@@ -25,76 +25,76 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Capisce quanto danno ha fatto un TNT minecart a ogni player.
+ * Works out how much damage a TNT minecart dealt to each player.
  *
- * Il server ci manda informazioni separate:
- *  1. l'esplosione (posizione e raggio) e/o un evento "danno" con la fonte, ma senza quantità;
- *  2. poco dopo, la nuova vita del player.
- * Quindi: quando capiamo che un TNT cart ha colpito un player lo segniamo come "colpito",
- * e per qualche tick controlliamo di quanto scende la sua vita (+ cuori gialli).
+ * The server sends us separate pieces of information:
+ *  1. the explosion (position and radius) and/or a "damage" event with its source, but no amount;
+ *  2. shortly after, the player's new health.
+ * So: when we see that a TNT cart hit a player we mark them as "hit",
+ * and for a few ticks we check how much their health (+ absorption hearts) drops.
  *
- * Per non aspettare la nuova vita, appena arriva l'esplosione calcoliamo anche il danno
- * previsto (DamagePredictor) e lo mostriamo subito; poi il danno vero lo sostituisce.
+ * To avoid waiting for the new health, as soon as the explosion arrives we also compute the
+ * predicted damage (DamagePredictor) and show it right away; then the real damage replaces it.
  */
 public final class DamageTracker {
-	/** Per quanti tick dopo l'esplosione aspettiamo che la vita si aggiorni. Alcuni server
-	 *  mandano il calo di vita in più pezzi a distanza di qualche tick: tutti i pezzi
-	 *  che arrivano in questa finestra vengono sommati nello stesso numero. */
+	/** How many ticks after the explosion we wait for the health to update. Some servers
+	 *  send the health drop in several pieces a few ticks apart: all pieces arriving
+	 *  within this window are added to the same number. */
 	private static final int HIT_WINDOW_TICKS = 20;
-	/** Raggio in cui cercare un TNT cart se il danno arriva in modo indiretto. */
+	/** Radius in which to look for a TNT cart when the damage arrives indirectly. */
 	private static final double NEARBY_CART_RADIUS = 8.0;
 
-	/** Se true scrive in chat cosa vede la mod (comando /tntcartdamage debug). */
+	/** If true, prints in chat what the mod sees (command /tntcartdamage debug). */
 	public static boolean debug = false;
 
-	/** id entità -> vita e cuori gialli (assorbimento) al tick precedente */
+	/** entity id -> health and absorption hearts at the previous tick */
 	private static final Map<Integer, HealthSnapshot> lastHealth = new HashMap<>();
 
 	private record HealthSnapshot(float health, float absorption) {
 	}
-	/** id entità -> tick rimasti in cui un calo di vita conta come danno da TNT cart */
+	/** entity id -> ticks left during which a health drop counts as TNT cart damage */
 	private static final Map<Integer, Integer> pendingHits = new HashMap<>();
-	/** id dei player per cui il colpo attuale ha già creato un numero: i pezzi successivi
-	 *  dello stesso colpo vanno sommati a quel numero invece di crearne uno nuovo. */
+	/** ids of players whose current hit already created a number: later pieces of the
+	 *  same hit are added to that number instead of creating a new one. */
 	private static final Set<Integer> hitShown = new HashSet<>();
-	/** id entità -> tick rimasti in cui NON mostriamo numeri perché gli è appena scoppiato il totem */
+	/** entity id -> ticks left during which we DON'T show numbers because their totem just popped */
 	private static final Map<Integer, Integer> recentPops = new HashMap<>();
 
-	/** Per quanti tick ci ricordiamo di un TNT cart dopo che è sparito. */
+	/** How many ticks we remember a TNT cart after it disappears. */
 	private static final int CART_MEMORY_TICKS = 10;
-	/** id del cart -> ultima posizione vista. Serve perché sui server il cart può
-	 *  sparire dal client un attimo prima che arrivi il pacchetto dell'esplosione. */
+	/** cart id -> last seen position. Needed because on servers the cart can disappear
+	 *  from the client just before the explosion packet arrives. */
 	private static final Map<Integer, RecentCart> recentCarts = new HashMap<>();
 
 	private record RecentCart(Vec3 pos, int ticksLeft) {
 	}
 
-	/** Contatore dei tick del client, per sapere "quanto tempo fa" è successa una cosa. */
+	/** Client tick counter, to know "how long ago" something happened. */
 	private static int clientTicks = 0;
-	/** id del player -> tick in cui è arrivato il suo ultimo evento di danno da cart. */
+	/** player id -> tick in which their latest cart damage event arrived. */
 	private static final Map<Integer, Integer> cartHitTick = new HashMap<>();
 
-	/** Il danno vero di un colpo arriva entro pochi tick: per imparare usiamo solo quello. */
+	/** The real damage of a hit arrives within a few ticks: we only learn from that. */
 	private static final int CALIBRATION_WINDOW_TICKS = 4;
-	/** Se la posizione vera è entro questa distanza (in blocchi) da quella usata per la
-	 *  previsione, il calcolo di distanza ed esposizione era giusto e possiamo imparare. */
+	/** If the real position is within this distance (in blocks) of the one used for the
+	 *  prediction, the distance and exposure math was right and we can learn from it. */
 	private static final double POSITION_MATCH_BLOCKS = 0.05;
 
-	/** Una previsione fatta, da confrontare con il danno vero per imparare. */
+	/** A prediction we made, to compare with the real damage and learn from it. */
 	private static final class PredictionRecord {
 		final DamagePredictor.Prediction prediction;
 		final int tick;
-		/** Danno vero arrivato per questo colpo. */
+		/** Real damage received for this hit. */
 		float actualTotal;
-		/** La posizione vera (arrivata insieme alla vita) era quella usata? null = non ancora arrivata. */
+		/** Was the real position (sent with the health) the one we used? null = not arrived yet. */
 		Boolean positionMatches;
-		/** Un'altra esplosione ha preso questo player: il danno vero non è solo di questo colpo. */
+		/** Another explosion hit this player: the real damage isn't only from this hit. */
 		boolean contaminated;
-		/** La vita di questo player è vera? (No sui server con la vita finta, tranne la nostra.) */
+		/** Is this player's health real? (Not on fake-health servers, except our own.) */
 		boolean healthTrusted;
-		/** Con la vita finta: è arrivato un calo misurato esatto (tutto assorbito dai cuori gialli). */
+		/** With fake health: an exactly measured drop arrived (fully absorbed by absorption hearts). */
 		boolean sawExact;
-		/** Con la vita finta: è arrivato un calo NON misurabile (cuori gialli finiti). */
+		/** With fake health: a drop we CAN'T measure arrived (absorption hearts ran out). */
 		boolean sawInexact;
 
 		PredictionRecord(DamagePredictor.Prediction prediction, int tick, boolean healthTrusted) {
@@ -103,43 +103,43 @@ public final class DamageTracker {
 			this.healthTrusted = healthTrusted;
 		}
 
-		/** Sappiamo il danno vero di questo colpo? */
+		/** Do we know the real damage of this hit? */
 		boolean actualKnown() {
 			return healthTrusted ? !sawInexact : sawExact && !sawInexact;
 		}
 	}
 
-	/** id del player -> previsione del colpo in corso. */
+	/** player id -> prediction for the ongoing hit. */
 	private static final Map<Integer, PredictionRecord> records = new HashMap<>();
 
-	/** true se il server di adesso manda la vita FINTA degli altri player (vedi FakeHealthServers).
-	 *  Su questi server della vita degli altri sono veri solo i cuori gialli. */
+	/** true if the current server sends FAKE health for other players (see FakeHealthServers).
+	 *  On these servers only the absorption hearts of other players are real. */
 	private static boolean fakeHealthServer = false;
-	/** Più di questa cura in un tick è impossibile in vanilla (una pozione di cura II dà 8). */
+	/** More healing than this in one tick is impossible in vanilla (an Instant Health II potion gives 8). */
 	private static final float IMPOSSIBLE_HEAL = 8.5f;
-	/** Per 10 tick dopo un colpo, i colpi seguenti tolgono vita SENZA evento di danno:
-	 *  oltre questo tempo, una vita che scende senza evento di danno è impossibile in vanilla. */
+	/** For 10 ticks after a hit, further hits remove health WITHOUT a damage event:
+	 *  after that, health dropping without a damage event is impossible in vanilla. */
 	private static final int NO_EVENT_DAMAGE_TICKS = 12;
-	/** Quanti cambi di vita impossibili, entro quanto tempo, per capire che la vita è finta. */
+	/** How many impossible health changes, within how much time, before we decide health is fake. */
 	private static final int IMPOSSIBLE_CHANGES_NEEDED = 3;
 	private static final int IMPOSSIBLE_CHANGES_WINDOW_TICKS = 20 * 30;
-	/** Tick in cui abbiamo visto un cambio di vita impossibile. */
+	/** Ticks in which we saw an impossible health change. */
 	private static final ArrayDeque<Integer> impossibleChanges = new ArrayDeque<>();
-	/** id del player -> tick del suo ultimo evento di danno (di qualsiasi tipo). */
+	/** player id -> tick of their latest damage event (of any type). */
 	private static final Map<Integer, Integer> lastDamageEventTick = new HashMap<>();
-	/** id del player -> tick in cui l'abbiamo visto la prima volta (appena comparso la vita
-	 *  può "saltare" al valore vero: non è sospetto). */
+	/** player id -> tick we first saw them (right after appearing, health may "jump" to its
+	 *  real value: that's not suspicious). */
 	private static final Map<Integer, Integer> firstSeenTick = new HashMap<>();
 
 	private DamageTracker() {
 	}
 
-	/** Il nostro player (nei test automatici può fare finta di essere un avversario). */
+	/** Our own player (in automated tests it can pretend to be an opponent). */
 	private static boolean isSelf(Player player) {
 		return player instanceof LocalPlayer && !DamagePredictor.testTreatSelfAsOpponent;
 	}
 
-	/** Chiamato dalla mixin quando il server dice "questo player ha preso danno". */
+	/** Called by the mixin when the server says "this player took damage". */
 	public static void onDamageEvent(Player player, DamageSource source) {
 		lastDamageEventTick.put(player.getId(), clientTicks);
 		boolean fromCart = isFromTntCart(player, source);
@@ -149,33 +149,33 @@ public final class DamageTracker {
 					+ (fromCart ? " -> TNT cart!" : ""));
 		}
 		if (fromCart) {
-			// Ogni evento di danno da cart è un colpo nuovo: avrà il suo numero.
+			// Every cart damage event is a new hit: it gets its own number.
 			startHit(player);
 			cartHitTick.put(player.getId(), clientTicks);
 		} else {
-			// Danno da qualcos'altro (fuoco, caduta, spada...): il prossimo calo di vita
-			// è suo, non del cart, quindi chiudiamo la finestra del cart.
+			// Damage from something else (fire, fall, sword...): the next health drop belongs
+			// to it, not to the cart, so we close the cart's window.
 			endHit(player.getId());
 		}
 	}
 
-	/** Chiamato dalla mixin quando a un player scoppia un totem (per qualsiasi motivo). */
+	/** Called by the mixin when a player's totem pops (for any reason). */
 	public static void onTotemPop(Player player) {
 		if (debug) {
 			debugMessage(player.getName().getString() + " pop!");
 		}
 		DamageIndicators.addPop(player);
-		// Il totem rimette la vita a 1 e dà cuori gialli, quindi il calo di vita
-		// che arriva subito dopo non va mostrato come numero. Lo blocchiamo per un po'
-		// perché il pacchetto dell'esplosione può arrivare dopo il pop e rimarcarlo.
+		// The totem sets health to 1 and gives absorption hearts, so the health drop that
+		// follows must not be shown as a number. We block it for a while because the
+		// explosion packet may arrive after the pop and mark the player again.
 		endHit(player.getId());
 		recentPops.put(player.getId(), HIT_WINDOW_TICKS);
 	}
 
-	/** Chiamato dalla mixin quando il server manda un'esplosione. */
+	/** Called by the mixin when the server sends an explosion. */
 	public static void onExplosion(ClientLevel level, Vec3 center, float radius) {
-		// Il cart esplode nel punto in cui si trova, quindi se c'è un TNT cart
-		// proprio al centro dell'esplosione, l'esplosione è sua.
+		// A cart explodes where it is, so if there's a TNT cart right at the
+		// center of the explosion, the explosion is its own.
 		boolean fromCart = isTntCartNear(level, center, 2.0);
 		if (debug) {
 			debugMessage(String.format(Locale.ROOT, "explosion radius %.1f%s", radius, fromCart ? " -> TNT cart!" : ""));
@@ -183,14 +183,14 @@ public final class DamageTracker {
 		if (!fromCart) {
 			return;
 		}
-		// Un'esplosione fa danno fino a circa 2 volte il suo raggio.
+		// An explosion deals damage up to about 2 times its radius.
 		double range = radius * 2.0 + 1.0;
 		for (AbstractClientPlayer player : level.players()) {
 			int id = player.getId();
-			// Il server manda "questo player ha preso danno dal cart" PRIMA del pacchetto
-			// dell'esplosione. Se è appena arrivato, sappiamo per certo che il player è stato
-			// colpito (niente scudo, niente invulnerabilità: in quei casi l'evento non arriva):
-			// calcoliamo subito il danno, senza aspettare la nuova vita.
+			// The server sends "this player took damage from the cart" BEFORE the explosion
+			// packet. If it just arrived, we know for sure the player was hit (no shield, no
+			// invulnerability: in those cases the event doesn't arrive), so we compute the
+			// damage right away without waiting for the new health.
 			Integer hitTick = cartHitTick.get(id);
 			boolean justHit = hitTick != null && clientTicks - hitTick <= 1;
 			if (justHit && !hitShown.contains(id) && !recentPops.containsKey(id)) {
@@ -198,12 +198,12 @@ public final class DamageTracker {
 				continue;
 			}
 			boolean inRange = ServerPositions.latest(player).distanceToSqr(center) <= range * range;
-			// Un'altra esplosione sullo stesso player: il danno vero non sarà solo del colpo previsto.
+			// Another explosion on the same player: the real damage won't only be from the predicted hit.
 			PredictionRecord record = records.get(id);
 			if (inRange && record != null) {
 				record.contaminated = true;
 			}
-			// Se il player ha già un colpo da cart in corso è lo stesso colpo: non ne apriamo uno nuovo.
+			// If the player already has a cart hit in progress it's the same hit: don't open a new one.
 			if (inRange && !pendingHits.containsKey(id)) {
 				startHit(player);
 			}
@@ -220,13 +220,13 @@ public final class DamageTracker {
 			debugMessage(describe(player, prediction, radius));
 		}
 		DamageIndicators.addPrediction(player, prediction.damage(), prediction.absorptionDamage());
-		// Il numero c'è già: quando arriva la vita vera, va a sostituire la previsione.
+		// The number is already there: when the real health arrives, it replaces the prediction.
 		hitShown.add(id);
 		records.put(id, new PredictionRecord(prediction, clientTicks, isSelf(player) || !fakeHealthServer));
 	}
 
 	private static void startHit(Player player) {
-		// Un colpo nuovo: quello prima è finito, impariamo da lui.
+		// A new hit: the previous one is over, learn from it.
 		finishRecord(player.getId());
 		pendingHits.put(player.getId(), HIT_WINDOW_TICKS);
 		hitShown.remove(player.getId());
@@ -235,7 +235,7 @@ public final class DamageTracker {
 	private static void endHit(int id) {
 		PredictionRecord record = records.get(id);
 		if (record != null && clientTicks - record.tick <= CALIBRATION_WINDOW_TICKS) {
-			// Totem o altro danno subito dopo il colpo: il danno vero è "sporco", non impariamo.
+			// Totem or other damage right after the hit: the real damage is "dirty", don't learn.
 			records.remove(id);
 		} else {
 			finishRecord(id);
@@ -244,7 +244,7 @@ public final class DamageTracker {
 		hitShown.remove(id);
 	}
 
-	/** Colpo finito: confronta previsione e danno vero e, se il confronto è affidabile, impara. */
+	/** Hit finished: compare prediction and real damage and, if the comparison is reliable, learn. */
 	private static void finishRecord(int id) {
 		PredictionRecord record = records.remove(id);
 		Minecraft client = Minecraft.getInstance();
@@ -269,7 +269,7 @@ public final class DamageTracker {
 				&& !record.contaminated
 				&& record.actualTotal > 0
 				&& prediction.afterArmor() > 0.01f
-				// Se è finita la vita (morto) il danno vero è "tagliato": non dice niente.
+				// If health ran out (dead) the real damage is "cut off": it tells us nothing.
 				&& record.actualTotal < prediction.healthBefore() - 0.01f;
 		if (!reliable) {
 			return;
@@ -294,18 +294,18 @@ public final class DamageTracker {
 	}
 
 	private static boolean isFromTntCart(Player player, DamageSource source) {
-		// Caso normale: la fonte diretta del danno è il cart stesso.
+		// Normal case: the direct source of the damage is the cart itself.
 		if (source.getDirectEntity() instanceof MinecartTNT) {
 			return true;
 		}
-		// Caso di riserva: è un'esplosione e c'è (o c'era appena) un TNT cart vicino.
+		// Fallback: it's an explosion and there is (or just was) a TNT cart nearby.
 		if (source.is(DamageTypeTags.IS_EXPLOSION) && player.level() instanceof ClientLevel level) {
 			return isTntCartNear(level, player.position(), NEARBY_CART_RADIUS);
 		}
 		return false;
 	}
 
-	/** C'è un TNT cart entro radius blocchi da pos, adesso o negli ultimi CART_MEMORY_TICKS? */
+	/** Is there a TNT cart within radius blocks of pos, now or in the last CART_MEMORY_TICKS? */
 	private static boolean isTntCartNear(ClientLevel level, Vec3 pos, double radius) {
 		AABB area = AABB.ofSize(pos, radius * 2, radius * 2, radius * 2);
 		if (!level.getEntitiesOfClass(MinecartTNT.class, area).isEmpty()) {
@@ -340,7 +340,7 @@ public final class DamageTracker {
 
 		ServerPositions.tick(level, clientTicks);
 		if (!fakeHealthServer) {
-			// Server già riconosciuto in passato (salvato nel file)?
+			// Server already recognized in the past (saved in the file)?
 			String server = FakeHealthServers.currentServerKey();
 			if (server != null && FakeHealthServers.isKnown(server)) {
 				fakeHealthServer = true;
@@ -365,17 +365,17 @@ public final class DamageTracker {
 			if (!self) {
 				checkForFakeHealth(player, before, now);
 			}
-			// La nostra vita è sempre vera (il server ce la manda a parte). Quella degli altri
-			// no, se il server la falsa: in quel caso sono veri solo i cuori gialli.
+			// Our own health is always real (the server sends it separately). Other players'
+			// isn't, if the server fakes it: in that case only the absorption hearts are real.
 			boolean healthTrusted = self || !fakeHealthServer;
 
-			// Il danno toglie prima i cuori gialli e poi la vita normale:
-			// misuriamo separatamente di quanto è sceso ognuno dei due.
+			// Damage takes absorption hearts first, then normal health:
+			// we measure how much each of the two dropped separately.
 			float absorptionLost = Math.max(0, before.absorption() - now.absorption());
 			float healthLost = healthTrusted ? Math.max(0, before.health() - now.health()) : 0;
 			float totalLost = absorptionLost + healthLost;
-			// Con la vita finta il danno vero lo sappiamo solo se i cuori gialli non sono finiti:
-			// vuol dire che tutto il danno è andato lì.
+			// With fake health we only know the real damage if the absorption hearts didn't run
+			// out: that means all the damage went there.
 			boolean exact = healthTrusted || now.absorption() > 0.01f;
 			if (totalLost > 0) {
 				boolean fromCart = pendingHits.containsKey(id) && !recentPops.containsKey(id);
@@ -394,18 +394,18 @@ public final class DamageTracker {
 						record.sawInexact = true;
 					}
 					if (record.positionMatches == null) {
-						// La vita arriva insieme alla posizione vera che il server ha usato.
+						// The health arrives together with the real position the server used.
 						double offset = ServerPositions.latest(player).distanceTo(record.prediction.positionUsed());
 						record.positionMatches = record.prediction.positionCertain() || offset < POSITION_MATCH_BLOCKS;
 					}
 				}
 				if (fromCart && exact) {
-					// Primo pezzo del colpo -> nuovo numero; pezzi successivi -> sommati allo stesso.
+					// First piece of the hit -> new number; later pieces -> added to the same one.
 					DamageIndicators.addDamage(player, totalLost, absorptionLost, hitShown.contains(id));
 					hitShown.add(id);
 				} else if (fromCart) {
-					// Vita finta e cuori gialli finiti: sappiamo solo la parte gialla. La mettiamo
-					// nella previsione, che resta una previsione (sbiadita).
+					// Fake health and absorption hearts ran out: we only know the absorption part.
+					// We put it into the prediction, which stays a (faded) prediction.
 					DamageIndicators.setKnownAbsorption(player, absorptionLost);
 				}
 			}
@@ -413,25 +413,25 @@ public final class DamageTracker {
 		lastHealth.clear();
 		lastHealth.putAll(currentHealth);
 
-		// Fa scadere i player "colpiti" dopo HIT_WINDOW_TICKS.
+		// Expire "hit" players after HIT_WINDOW_TICKS.
 		countDown(pendingHits);
 		hitShown.retainAll(pendingHits.keySet());
 		countDown(recentPops);
-		// Colpi finiti (finestra scaduta): confronta previsione e danno vero.
+		// Finished hits (window expired): compare prediction and real damage.
 		for (Integer id : new ArrayList<>(records.keySet())) {
 			if (!pendingHits.containsKey(id)) {
 				finishRecord(id);
 			}
 		}
 
-		// Avanza il contatore e dimentica i colpi ormai vecchi.
+		// Advance the counter and forget old hits.
 		clientTicks++;
 		cartHitTick.values().removeIf(tick -> clientTicks - tick > 2);
 		lastDamageEventTick.values().removeIf(tick -> clientTicks - tick > NO_EVENT_DAMAGE_TICKS);
 		firstSeenTick.keySet().retainAll(currentHealth.keySet());
 
-		// Aggiorna la memoria dei TNT cart: quelli spariti restano per CART_MEMORY_TICKS,
-		// quelli ancora presenti vengono "rinfrescati" con la posizione attuale.
+		// Update the TNT cart memory: carts that disappeared stay for CART_MEMORY_TICKS,
+		// carts still present are "refreshed" with their current position.
 		recentCarts.replaceAll((id, cart) -> new RecentCart(cart.pos(), cart.ticksLeft() - 1));
 		recentCarts.values().removeIf(cart -> cart.ticksLeft() <= 0);
 		for (Entity entity : level.entitiesForRendering()) {
@@ -442,11 +442,11 @@ public final class DamageTracker {
 	}
 
 	/**
-	 * Controlla se la vita di un altro player cambia in un modo impossibile in vanilla:
-	 *  - sale di più di quanto può curare una pozione;
-	 *  - scende senza nessun evento di danno (e senza un colpo appena prima).
-	 * Alcuni server mandano vite finte (a caso) degli altri player: se succede più volte
-	 * in poco tempo, smettiamo di fidarci della loro vita.
+	 * Checks whether another player's health changes in a way that's impossible in vanilla:
+	 *  - it goes up more than a potion can heal;
+	 *  - it drops without any damage event (and without a hit just before).
+	 * Some servers send fake (random) health for other players: if this happens several times
+	 * in a short time, we stop trusting their health.
 	 */
 	private static void checkForFakeHealth(Player player, HealthSnapshot before, HealthSnapshot now) {
 		if (fakeHealthServer || before.health() <= 0 || now.health() <= 0) {
@@ -475,7 +475,7 @@ public final class DamageTracker {
 		}
 		if (impossibleChanges.size() >= IMPOSSIBLE_CHANGES_NEEDED) {
 			fakeHealthServer = true;
-			// Quello imparato finora sugli altri player veniva da vite finte: buttiamo via tutto.
+			// What we learned so far about other players came from fake health: throw it all away.
 			OpponentCalibration.clear();
 			for (PredictionRecord record : records.values()) {
 				record.healthTrusted = false;
@@ -492,7 +492,7 @@ public final class DamageTracker {
 		}
 	}
 
-	/** Toglie 1 tick a ogni valore e rimuove quelli arrivati a 0. */
+	/** Subtracts 1 tick from every value and removes the ones that reached 0. */
 	private static void countDown(Map<Integer, Integer> ticksById) {
 		Iterator<Map.Entry<Integer, Integer>> it = ticksById.entrySet().iterator();
 		while (it.hasNext()) {

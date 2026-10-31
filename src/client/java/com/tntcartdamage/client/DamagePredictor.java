@@ -32,34 +32,34 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Calcola in anticipo quanto danno fa l'esplosione di un TNT cart a un player, rifacendo
- * gli stessi conti del server (Minecraft 26.2, verificati sul codice del gioco).
+ * Predicts how much damage a TNT minecart explosion deals to a player, by redoing the same
+ * math as the server (Minecraft 26.2, checked against the game's code).
  *
- * Cosa NON serve calcolare: la potenza dell'esplosione dipende dalla velocità della freccia
- * infuocata (o del cart, o dall'altezza da cui cade) più un numero casuale, ma il server la
- * manda già finita nel pacchetto dell'esplosione (il "raggio"). Quindi angolo e velocità
- * della freccia sono già compresi.
+ * What we DON'T need to compute: the explosion power depends on the speed of the flaming
+ * arrow (or of the cart, or the height it fell from) plus a random number, but the server
+ * sends the final value in the explosion packet (the "radius"). So the arrow's angle and
+ * speed are already included.
  *
- * I passaggi, nello stesso ordine del server:
- *  1. ServerExplosion.hurtEntities: distanza dei piedi dal centro + quanto il corpo è
- *     "esposto" (raggi dal corpo al centro che non sbattono contro blocchi)
- *  2. Player.hurtServer: difficoltà
- *  3. LivingEntity.getDamageAfterArmorAbsorb: armatura e resistenza dell'armatura
- *  4. LivingEntity.getDamageAfterMagicAbsorb: effetto Resistenza, poi Protezione /
- *     Protezione dalle esplosioni
- *  5. Player.actuallyHurt: prima i cuori gialli, poi la vita
+ * The steps, in the same order as the server:
+ *  1. ServerExplosion.hurtEntities: distance from the feet to the center + how "exposed"
+ *     the body is (rays from the body to the center that don't hit any block)
+ *  2. Player.hurtServer: difficulty
+ *  3. LivingEntity.getDamageAfterArmorAbsorb: armor and armor toughness
+ *  4. LivingEntity.getDamageAfterMagicAbsorb: Resistance effect, then Protection /
+ *     Blast Protection
+ *  5. Player.actuallyHurt: absorption hearts first, then health
  *
- * Scudo e invulnerabilità (colpito da meno di 10 tick) non servono: in quei casi il server
- * non manda l'evento di danno, e senza evento non facciamo nessuna previsione.
+ * Shields and invulnerability (hit less than 10 ticks ago) don't matter: in those cases the
+ * server doesn't send the damage event, and without the event we make no prediction.
  */
 public final class DamagePredictor {
-	/** Livello di Protezione che assumiamo per un pezzo di armatura con gli incantesimi
-	 *  nascosti dal server (in PvP quasi tutti usano Protezione IV). */
+	/** Protection level we assume for an armor piece whose enchantments the server hides
+	 *  (in PvP almost everyone uses Protection IV). */
 	private static final int ASSUMED_HIDDEN_PROTECTION_LEVEL = 4;
 
 	/**
-	 * damage: danno finale in HP; absorptionDamage: quanta parte va sui cuori gialli.
-	 * Gli altri campi servono per il debug e per imparare dai colpi veri.
+	 * damage: final damage in HP; absorptionDamage: how much of it goes to absorption hearts.
+	 * The other fields are used for debugging and for learning from real hits.
 	 */
 	public record Prediction(
 			float damage, float absorptionDamage,
@@ -69,20 +69,20 @@ public final class DamagePredictor {
 			Vec3 positionUsed, boolean positionCertain, float healthBefore, String equipment) {
 	}
 
-	/** Solo per i test automatici: tratta il nostro player come un avversario (non conosciamo
-	 *  i suoi effetti e i suoi incantesimi possono essere "nascosti"). */
+	/** Automated tests only: treat our own player as an opponent (we don't know their
+	 *  effects and their enchantments may be "hidden"). */
 	public static boolean testTreatSelfAsOpponent = false;
 
 	private DamagePredictor() {
 	}
 
-	/** @return la previsione, oppure null se l'esplosione non dovrebbe fargli danno */
+	/** @return the prediction, or null if the explosion shouldn't damage them */
 	public static Prediction predict(Player player, Vec3 center, float radius, int clientTick) {
 		if (player.isSpectator() || player.isCreative()) {
 			return null;
 		}
 
-		// 1. Danno base dell'esplosione, con il player dove lo vede il server.
+		// 1. Base explosion damage, with the player where the server sees them.
 		Vec3 position = ServerPositions.estimate(player, clientTick);
 		float diameter = radius * 2.0f;
 		double distance = Math.sqrt(position.distanceToSqr(center)) / diameter;
@@ -94,23 +94,23 @@ public final class DamagePredictor {
 		double impact = (1.0 - distance) * exposure;
 		float rawDamage = (float) ((impact * impact + impact) / 2.0 * 7.0 * diameter + 1.0);
 
-		// 2. Difficoltà del server.
+		// 2. Server difficulty.
 		rawDamage = scaleWithDifficulty(player.level().getDifficulty(), rawDamage);
 		if (rawDamage <= 0) {
 			return null;
 		}
 
-		// 3. Armatura. Valore e resistenza dell'armatura degli altri player arrivano al client.
+		// 3. Armor. Other players' armor value and toughness are sent to the client.
 		DamageSource source = player.level().damageSources().explosion(null, null);
 		float afterArmor = CombatRules.getDamageAfterAbsorb(player, rawDamage, source,
 				player.getArmorValue(), (float) player.getAttributeValue(Attributes.ARMOR_TOUGHNESS));
 
-		// 4. Resistenza + incantesimi, oppure quello che abbiamo imparato dai colpi precedenti.
+		// 4. Resistance + enchantments, or what we learned from previous hits.
 		boolean self = player instanceof LocalPlayer && !testTreatSelfAsOpponent;
 		int resistanceLevel = resistanceLevel(player, self);
 		ProtectionInfo protection = protection(player, self);
 		String equipment = equipmentKey(player);
-		// La previsione ha dovuto indovinare qualcosa? Allora ci fidiamo prima di quello imparato.
+		// Did the prediction have to guess something? Then we trust the learned value sooner.
 		boolean uncertain = protection.hidden() || (!self && resistanceLevel > 0);
 		Float learned = OpponentCalibration.factor(player, equipment, resistanceLevel, uncertain, clientTick);
 		float damage;
@@ -119,7 +119,7 @@ public final class DamagePredictor {
 		} else {
 			damage = afterArmor;
 			if (resistanceLevel > 0) {
-				// Resistenza: -20% per livello (stessa formula di getDamageAfterMagicAbsorb).
+				// Resistance: -20% per level (same formula as getDamageAfterMagicAbsorb).
 				int reduction = resistanceLevel * 5;
 				damage = Math.max(damage * (25 - reduction) / 25.0f, 0.0f);
 			}
@@ -127,10 +127,10 @@ public final class DamagePredictor {
 		}
 		float magicFactor = afterArmor > 0 ? damage / afterArmor : 0;
 
-		// 5. I cuori gialli si consumano per primi.
+		// 5. Absorption hearts are used up first.
 		float absorptionDamage = Math.min(damage, player.getAbsorptionAmount());
-		// La nostra posizione la conosciamo, se siamo fermi. Per gli altri lo verifichiamo
-		// quando arriva la posizione vera (DamageTracker).
+		// We know our own position, if we're standing still. For others we check it
+		// when the real position arrives (DamageTracker).
 		boolean positionCertain = player instanceof LocalPlayer
 				&& player.getDeltaMovement().horizontalDistanceSqr() < 1.0e-4 && player.onGround();
 		return new Prediction(damage, absorptionDamage, rawDamage, afterArmor, magicFactor,
@@ -140,11 +140,11 @@ public final class DamagePredictor {
 	}
 
 	/**
-	 * Copia esatta di ServerExplosion.getSeenPercent, ma con il box del player spostato
-	 * dove lo vede il server. Dal corpo partono raggi verso il centro (una griglia di punti,
-	 * per un player 3 × 5 × 3 = 45): conta quanti NON sbattono contro un blocco.
-	 * I blocchi distrutti dall'esplosione non contano: il server calcola il danno prima di
-	 * romperli, e il client in questo momento ha ancora i blocchi di prima.
+	 * Exact copy of ServerExplosion.getSeenPercent, but with the player's box moved to where
+	 * the server sees them. Rays go from the body to the center (a grid of points, 3 × 5 × 3 = 45
+	 * for a player): counts how many DON'T hit a block.
+	 * Blocks destroyed by the explosion don't matter: the server computes the damage before
+	 * breaking them, and at this moment the client still has the old blocks.
 	 */
 	private static float exposure(Vec3 center, Player player, AABB box) {
 		double stepX = 1.0 / ((box.maxX - box.minX) * 2.0 + 1.0);
@@ -176,7 +176,7 @@ public final class DamagePredictor {
 		return (float) visible / (float) total;
 	}
 
-	/** Copia di Player.hurtServer per i danni che dipendono dalla difficoltà (le esplosioni sì). */
+	/** Copy of Player.hurtServer for damage that scales with difficulty (explosions do). */
 	private static float scaleWithDifficulty(Difficulty difficulty, float damage) {
 		return switch (difficulty) {
 			case PEACEFUL -> 0.0f;
@@ -187,10 +187,10 @@ public final class DamagePredictor {
 	}
 
 	/**
-	 * Livello di Resistenza (1 = Resistenza I), 0 se non ce l'ha.
-	 * Del nostro player conosciamo gli effetti. Degli altri no, ma il server manda i colori
-	 * delle particelle degli effetti visibili: se c'è quello della Resistenza assumiamo il
-	 * livello I (quello della mela d'oro incantata), perché il livello non viene mandato.
+	 * Resistance level (1 = Resistance I), 0 if they don't have it.
+	 * We know our own player's effects. Not other players', but the server sends the colors of
+	 * their visible effect particles: if the Resistance color is there we assume level I
+	 * (the one from an enchanted golden apple), because the level isn't sent.
 	 */
 	private static int resistanceLevel(Player player, boolean self) {
 		if (self) {
@@ -200,7 +200,7 @@ public final class DamagePredictor {
 		return hasResistanceParticles(player) ? 1 : 0;
 	}
 
-	/** true se tra le particelle degli effetti del player c'è il colore della Resistenza. */
+	/** true if the player's effect particles include the Resistance color. */
 	public static boolean hasResistanceParticles(LivingEntity entity) {
 		int resistanceColor = MobEffects.RESISTANCE.value().getColor() & 0xFFFFFF;
 		List<ParticleOptions> particles =
@@ -218,11 +218,11 @@ public final class DamagePredictor {
 		return false;
 	}
 
-	/** points: punti protezione contro le esplosioni; hidden: c'erano incantesimi nascosti. */
+	/** points: protection points against explosions; hidden: some enchantments were hidden. */
 	private record ProtectionInfo(float points, boolean hidden) {
 	}
 
-	/** Protezione vale 1 punto per livello, Protezione dalle esplosioni 2 (massimo 20 in tutto). */
+	/** Protection is worth 1 point per level, Blast Protection 2 (20 at most in total). */
 	private static ProtectionInfo protection(Player player, boolean self) {
 		Holder<Enchantment> protection = enchantment(player, Enchantments.PROTECTION);
 		Holder<Enchantment> blastProtection = enchantment(player, Enchantments.BLAST_PROTECTION);
@@ -250,9 +250,9 @@ public final class DamagePredictor {
 	}
 
 	/**
-	 * Paper (il server che usano quasi tutti) può nascondere gli incantesimi degli altri:
-	 * li sostituisce con UN incantesimo a caso di livello I, solo per far vedere il luccichio.
-	 * Un pezzo di armatura da PvP con un solo incantesimo di livello I è quasi sicuramente così.
+	 * Paper (the server software almost everyone uses) can hide other players' enchantments:
+	 * it replaces them with ONE random level I enchantment, just to keep the glint.
+	 * A PvP armor piece with a single level I enchantment is almost certainly hidden.
 	 */
 	private static boolean looksHidden(ItemEnchantments enchantments) {
 		if (enchantments.size() != 1) {
@@ -264,7 +264,7 @@ public final class DamagePredictor {
 		return false;
 	}
 
-	/** "Impronta" dell'armatura: tipo + incantesimi visibili (non la durabilità, che cambia sempre). */
+	/** Armor "fingerprint": item type + visible enchantments (not durability, which keeps changing). */
 	private static String equipmentKey(Player player) {
 		StringBuilder key = new StringBuilder();
 		for (EquipmentSlot slot : EquipmentSlot.VALUES) {

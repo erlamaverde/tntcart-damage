@@ -10,10 +10,10 @@ import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
 /**
- * handleDamageEvent viene chiamato sul client quando il server manda il pacchetto
- * "questa entità ha preso danno" (quello che fa diventare rosso il player).
- * Il pacchetto dice la FONTE del danno ma non la quantità: quella la ricaviamo
- * dopo, guardando di quanto scende la vita (vedi DamageTracker).
+ * handleDamageEvent is called on the client when the server sends the "this entity took damage"
+ * packet (the one that makes the player flash red). The packet tells us the SOURCE of the damage
+ * but not the amount: we work that out afterwards by watching how much the health drops
+ * (see DamageTracker).
  */
 @Mixin(LivingEntity.class)
 public abstract class LivingEntityMixin {

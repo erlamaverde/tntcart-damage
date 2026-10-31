@@ -22,7 +22,7 @@ loom {
 	}
 }
 
-// Test automatico in gioco: ./gradlew runClientGameTest
+// Automated in-game test: ./gradlew runClientGameTest
 fabricApi {
 	configureTests {
 		createSourceSet = true
@@ -40,8 +40,8 @@ dependencies {
 	// Fabric API. This is technically optional, but you probably want it anyway.
 	implementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-	// Per provare insieme ad altre mod: ./gradlew runClientGameTest -PextraMods="C:/percorso/mods"
-	// (aggiunge al gioco i .jar elencati in extraModNames, presi da quella cartella)
+	// To test together with other mods: ./gradlew runClientGameTest -PextraMods="C:/path/to/mods"
+	// (adds the .jar files listed in extraModNames, taken from that folder)
 	if (project.hasProperty("extraMods")) {
 		def names = project.findProperty("extraModNames").toString().split(",")
 		runtimeOnly files(names.collect { new File(project.property("extraMods").toString(), it.trim()) })

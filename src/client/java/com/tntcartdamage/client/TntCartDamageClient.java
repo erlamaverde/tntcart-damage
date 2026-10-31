@@ -11,19 +11,19 @@ public class TntCartDamageClient implements ClientModInitializer {
 	@Override
 	public void onInitializeClient() {
 		ClientTickEvents.END_CLIENT_TICK.register(client -> {
-			// Prima invecchiamo i testi esistenti, poi aggiungiamo quelli nuovi (età 0).
+			// First age the existing labels, then add the new ones (age 0).
 			DamageIndicators.tick(client);
 			DamageTracker.tick(client);
 		});
 		LevelRenderEvents.COLLECT_SUBMITS.register(DamageIndicators::render);
 
-		// Comandi solo client (non vengono mandati al server):
-		//   /tntcartdamage test  -> mostra un danno finto su di te (in terza persona, F5)
-		//   /tntcartdamage debug -> scrive in chat esplosioni, danni e cali di vita
+		// Client-only commands (never sent to the server):
+		//   /tntcartdamage test  -> shows a fake damage number on yourself (third person, F5)
+		//   /tntcartdamage debug -> prints explosions, damage events and health drops in chat
 		ClientCommandRegistrationCallback.EVENT.register((dispatcher, buildContext) ->
 				dispatcher.register(ClientCommands.literal("tntcartdamage")
 						.then(ClientCommands.literal("test").executes(context -> {
-							// 11 HP di danno, di cui 4 HP sui cuori gialli -> "-7" rosso e "(-4)" giallo
+							// 11 HP of damage, 4 HP of it on absorption hearts -> red "-7" and yellow "(-4)"
 							DamageIndicators.addDamage(context.getSource().getPlayer(), 11.0f, 4.0f, false);
 							context.getSource().sendFeedback(Component.literal("[TCD] test text shown"));
 							return 1;

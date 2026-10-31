@@ -7,31 +7,31 @@ import java.util.Map;
 import java.util.UUID;
 
 /**
- * Impara dai colpi veri quanto un avversario riduce DAVVERO il danno dopo l'armatura.
+ * Learns from real hits how much an opponent ACTUALLY reduces damage after armor.
  *
- * Il client non può sapere tutto: il server può nascondere gli incantesimi degli altri
- * (Paper "item obfuscation"), non manda il livello della Resistenza e può avere plugin che
- * cambiano il danno dei cart. Però dopo ogni colpo sappiamo quanto danno è arrivato davvero:
- *     fattore = danno vero / danno dopo l'armatura
- * e lo usiamo per i colpi successivi sullo stesso player, finché ha la stessa armatura.
+ * The client can't know everything: the server may hide other players' enchantments
+ * (Paper "item obfuscation"), it doesn't send the Resistance level, and it may run plugins that
+ * change cart damage. But after each hit we know how much damage really got through:
+ *     factor = real damage / damage after armor
+ * and we use it for the next hits on the same player, as long as they wear the same armor.
  *
- * Per non imparare cose sbagliate:
- *  - se la previsione ha dovuto INDOVINARE qualcosa (incantesimi nascosti, Resistenza vista
- *    solo dalle particelle), basta un colpo per usare quello imparato;
- *  - altrimenti il calcolo è già esatto, e lo cambiamo solo se due colpi di fila dicono la
- *    stessa cosa (es. un plugin del server che cambia il danno dei cart).
+ * To avoid learning wrong things:
+ *  - if the prediction had to GUESS something (hidden enchantments, Resistance only seen
+ *    through its particles), one hit is enough to use the learned value;
+ *  - otherwise the calculation is already exact, and we only change it if two hits in a row
+ *    agree (e.g. a server plugin that changes cart damage).
  */
 public final class OpponentCalibration {
-	/** Dopo quanto tempo dimentichiamo quello che abbiamo imparato (3 minuti). */
+	/** How long until we forget what we learned (3 minutes). */
 	private static final int MAX_AGE_TICKS = 20 * 60 * 3;
-	/** Due misure "dicono la stessa cosa" se differiscono meno del 10%. */
+	/** Two measurements "agree" if they differ by less than 10%. */
 	private static final float SAME_RESULT_TOLERANCE = 0.1f;
 
 	/**
-	 * equipment: "impronta" dell'armatura (tipo + incantesimi visibili);
-	 * resistanceLevel: la Resistenza che vedevamo (per gli altri player: 1 se ha le particelle).
-	 * Se una delle due cambia, quello che abbiamo imparato non vale più.
-	 * confirmations: quanti colpi di fila hanno dato lo stesso fattore.
+	 * equipment: "fingerprint" of the armor (item type + visible enchantments);
+	 * resistanceLevel: the Resistance level we saw (for other players: 1 if they have the particles).
+	 * If either of them changes, what we learned is no longer valid.
+	 * confirmations: how many hits in a row gave the same factor.
 	 */
 	private record Entry(String equipment, int resistanceLevel, float factor, int confirmations, int tick) {
 		boolean matches(String otherEquipment, int otherResistance, int now) {
@@ -47,8 +47,8 @@ public final class OpponentCalibration {
 	}
 
 	/**
-	 * Il fattore imparato per questo player, oppure null se non ne abbiamo uno di cui fidarci.
-	 * uncertain: la previsione ha dovuto indovinare qualcosa (vedi sopra).
+	 * The learned factor for this player, or null if we don't have one we can trust.
+	 * uncertain: the prediction had to guess something (see above).
 	 */
 	public static Float factor(Player player, String equipment, int resistanceLevel, boolean uncertain, int now) {
 		Entry entry = entries.get(player.getUUID());
@@ -63,7 +63,7 @@ public final class OpponentCalibration {
 		Entry old = entries.get(player.getUUID());
 		if (old != null && old.matches(equipment, resistanceLevel, now)
 				&& Math.abs(old.factor() - factor) <= Math.max(SAME_RESULT_TOLERANCE * old.factor(), 0.02f)) {
-			// Conferma: stessa cosa di prima. Facciamo la media.
+			// Confirmed: same result as before. Average them.
 			entries.put(player.getUUID(), new Entry(equipment, resistanceLevel,
 					(old.factor() + factor) / 2.0f, old.confirmations() + 1, now));
 		} else {
